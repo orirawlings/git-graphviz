@@ -20,6 +20,52 @@ var (
 	edges   = make(map[plumbing.Hash][]plumbing.Hash)
 )
 
+func main() {
+	r, err := repo()
+	check(err)
+
+	// walk commits from HEAD
+	commitIter, err := r.Log(&git.LogOptions{})
+	check(err)
+	check(commitIter.ForEach(func(commit *object.Commit) error {
+		commits[commit.ID()] = true
+		edges[commit.ID()] = append(commit.ParentHashes[:], commit.TreeHash)
+		return walkTree(r.Storer, commit.TreeHash)
+	}))
+
+	fmt.Println("digraph {\n\tnode [fontname=AnonymousPro,style=filled];")
+	for h := range commits {
+		fmt.Printf("\t\"%s\" [label=\"commit\\n%s\",color=yellowgreen,group=commits];\n", h, abbrev(h))
+	}
+	for h := range trees {
+		fmt.Printf("\t\"%s\" [label=\"tree\\n%s\",color=tomato];\n", h, abbrev(h))
+	}
+	for h := range blobs {
+		fmt.Printf("\t\"%s\" [label=\"blob\\n%s\",color=gold];\n", h, abbrev(h))
+	}
+	for h, targets := range edges {
+		for _, target := range targets {
+			fmt.Printf("\t\"%s\" -> \"%s\";\n", h, target)
+		}
+	}
+	fmt.Println("}")
+}
+
+func repo() (*git.Repository, error) {
+	if gitdir, ok := os.LookupEnv("GIT_DIR"); ok {
+		dotgit, err := filesystem.NewStorage(osfs.New(gitdir))
+		if err != nil {
+			return nil, err
+		}
+		return git.Open(dotgit, osfs.New(os.Getenv("GIT_WORK_TREE")))
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	return git.PlainOpen(dir)
+}
+
 func check(err error) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "git-graphviz: Error: %s", err)
@@ -54,50 +100,4 @@ func walkTree(s storer.EncodedObjectStorer, h plumbing.Hash) error {
 
 func abbrev(h plumbing.Hash) string {
 	return h.String()[:6]
-}
-
-func repo() (*git.Repository, error) {
-	if gitdir, ok := os.LookupEnv("GIT_DIR"); ok {
-		dotgit, err := filesystem.NewStorage(osfs.New(gitdir))
-		if err != nil {
-			return nil, err
-		}
-		return git.Open(dotgit, osfs.New(os.Getenv("GIT_WORK_TREE")))
-	}
-	dir, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	return git.PlainOpen(dir)
-}
-
-func main() {
-	r, err := repo()
-	check(err)
-
-	// walk commits from HEAD
-	commitIter, err := r.Log(&git.LogOptions{})
-	check(err)
-	check(commitIter.ForEach(func(commit *object.Commit) error {
-		commits[commit.ID()] = true
-		edges[commit.ID()] = append(commit.ParentHashes[:], commit.TreeHash)
-		return walkTree(r.Storer, commit.TreeHash)
-	}))
-
-	fmt.Println("digraph {\n\tnode [fontname=AnonymousPro,style=filled];")
-	for h := range commits {
-		fmt.Printf("\t\"%s\" [label=\"commit\\n%s\",color=yellowgreen,group=commits];\n", h, abbrev(h))
-	}
-	for h := range trees {
-		fmt.Printf("\t\"%s\" [label=\"tree\\n%s\",color=tomato];\n", h, abbrev(h))
-	}
-	for h := range blobs {
-		fmt.Printf("\t\"%s\" [label=\"blob\\n%s\",color=gold];\n", h, abbrev(h))
-	}
-	for h, targets := range edges {
-		for _, target := range targets {
-			fmt.Printf("\t\"%s\" -> \"%s\";\n", h, target)
-		}
-	}
-	fmt.Println("}")
 }
