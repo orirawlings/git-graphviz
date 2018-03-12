@@ -1,8 +1,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-git.v4"
@@ -20,7 +22,17 @@ var (
 	edges   = make(map[plumbing.Hash][]plumbing.Hash)
 )
 
+type options struct {
+	noColor bool
+	noTypes bool
+}
+
 func main() {
+	opts := &options{}
+	flag.BoolVar(&opts.noColor, "no-color", false, "suppress filling graph nodes with color")
+	flag.BoolVar(&opts.noTypes, "no-types", false, "suppress labeling graph nodes with git object types")
+	flag.Parse()
+
 	r, err := repo()
 	check(err)
 
@@ -33,22 +45,7 @@ func main() {
 		return walkTree(r.Storer, commit.TreeHash)
 	}))
 
-	fmt.Println("digraph {\n\tnode [fontname=AnonymousPro,style=filled];")
-	for h := range commits {
-		fmt.Printf("\t\"%s\" [label=\"commit\\n%s\",color=yellowgreen,group=commits];\n", h, abbrev(h))
-	}
-	for h := range trees {
-		fmt.Printf("\t\"%s\" [label=\"tree\\n%s\",color=tomato];\n", h, abbrev(h))
-	}
-	for h := range blobs {
-		fmt.Printf("\t\"%s\" [label=\"blob\\n%s\",color=gold];\n", h, abbrev(h))
-	}
-	for h, targets := range edges {
-		for _, target := range targets {
-			fmt.Printf("\t\"%s\" -> \"%s\";\n", h, target)
-		}
-	}
-	fmt.Println("}")
+	render(opts)
 }
 
 func repo() (*git.Repository, error) {
@@ -96,6 +93,64 @@ func walkTree(s storer.EncodedObjectStorer, h plumbing.Hash) error {
 		}
 	}
 	return nil
+}
+
+func render(opts *options) {
+	fmt.Println("digraph {")
+	nodeAttrs := map[string]string{"fontname": "AnonymousPro"}
+	if !opts.noColor {
+		nodeAttrs["style"] = "filled"
+	}
+	fmt.Printf("\tnode %s;\n", renderAttrs(nodeAttrs))
+	for h := range commits {
+		attrs := map[string]string{
+			"group": "commits",
+			"label": label(h, "commit", opts.noTypes),
+		}
+		if !opts.noColor {
+			attrs["color"] = "yellowgreen"
+		}
+		fmt.Printf("\t\"%s\" %s;\n", h, renderAttrs(attrs))
+	}
+	for h := range trees {
+		attrs := map[string]string{
+			"label": label(h, "tree", opts.noTypes),
+		}
+		if !opts.noColor {
+			attrs["color"] = "tomato"
+		}
+		fmt.Printf("\t\"%s\" %s;\n", h, renderAttrs(attrs))
+	}
+	for h := range blobs {
+		attrs := map[string]string{
+			"label": label(h, "blob", opts.noTypes),
+		}
+		if !opts.noColor {
+			attrs["color"] = "gold"
+		}
+		fmt.Printf("\t\"%s\" %s;\n", h, renderAttrs(attrs))
+	}
+	for h, targets := range edges {
+		for _, target := range targets {
+			fmt.Printf("\t\"%s\" -> \"%s\";\n", h, target)
+		}
+	}
+	fmt.Println("}")
+}
+
+func renderAttrs(attrs map[string]string) string {
+	var as []string
+	for k, v := range attrs {
+		as = append(as, fmt.Sprintf("%s=\"%s\"", k, v))
+	}
+	return fmt.Sprintf("[%s]", strings.Join(as, ","))
+}
+
+func label(h plumbing.Hash, t string, noTypes bool) string {
+	if noTypes {
+		return abbrev(h)
+	}
+	return t + "\\n" + abbrev(h)
 }
 
 func abbrev(h plumbing.Hash) string {
