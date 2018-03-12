@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"os"
 
+	"gopkg.in/src-d/go-billy.v4/osfs"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/filemode"
 	"gopkg.in/src-d/go-git.v4/plumbing/object"
 	"gopkg.in/src-d/go-git.v4/plumbing/storer"
+	"gopkg.in/src-d/go-git.v4/storage/filesystem"
 )
 
 var (
@@ -54,10 +56,23 @@ func abbrev(h plumbing.Hash) string {
 	return h.String()[:6]
 }
 
+func repo() (*git.Repository, error) {
+	if gitdir, ok := os.LookupEnv("GIT_DIR"); ok {
+		dotgit, err := filesystem.NewStorage(osfs.New(gitdir))
+		if err != nil {
+			return nil, err
+		}
+		return git.Open(dotgit, osfs.New(os.Getenv("GIT_WORK_TREE")))
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	return git.PlainOpen(dir)
+}
+
 func main() {
-	cwd, err := os.Getwd()
-	check(err)
-	r, err := git.PlainOpen(cwd)
+	r, err := repo()
 	check(err)
 
 	// walk commits from HEAD
