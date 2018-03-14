@@ -41,7 +41,15 @@ func main() {
 	if flag.NArg() > 0 {
 		for _, n := range flag.Args() {
 			ref, err := r.Reference(plumbing.ReferenceName(n), false)
-			check(err)
+			if err != nil {
+				// Try decoding argument as hash
+				h := plumbing.NewHash(n)
+				if err := r.Storer.HasEncodedObject(h); err == nil {
+					check(walk(r.Storer, h))
+					continue
+				}
+				check(err)
+			}
 			check(walkRef(r.Storer, ref))
 		}
 	} else {
