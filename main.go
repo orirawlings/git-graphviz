@@ -16,6 +16,8 @@ import (
 )
 
 var (
+	refs    = make(map[string]*plumbing.Reference)
+	tags    = make(map[plumbing.Hash]bool)
 	commits = make(map[plumbing.Hash]bool)
 	trees   = make(map[plumbing.Hash]bool)
 	blobs   = make(map[plumbing.Hash]bool)
@@ -36,14 +38,19 @@ func main() {
 	r, err := repo()
 	check(err)
 
-	// walk commits from HEAD
-	commitIter, err := r.Log(&git.LogOptions{})
-	check(err)
-	check(commitIter.ForEach(func(commit *object.Commit) error {
-		commits[commit.ID()] = true
-		edges[commit.ID()] = append(commit.ParentHashes[:], commit.TreeHash)
-		return walkTree(r.Storer, commit.TreeHash)
-	}))
+	if flag.NArg() > 0 {
+		for _, n := range flag.Args() {
+			ref, err := r.Reference(plumbing.ReferenceName(n), false)
+			check(err)
+			check(walkRef(r.Storer, ref))
+		}
+	} else {
+		refs, err := r.References()
+		check(err)
+		check(refs.ForEach(func(ref *plumbing.Reference) error {
+			return walkRef(r.Storer, ref)
+		}))
+	}
 
 	render(opts)
 }
@@ -65,9 +72,70 @@ func repo() (*git.Repository, error) {
 
 func check(err error) {
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "git-graphviz: Error: %s", err)
+		fmt.Fprintf(os.Stderr, "git-graphviz: Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func walkRef(s storer.Storer, ref *plumbing.Reference) error {
+	name := string(ref.Name())
+	if _, ok := refs[name]; ok {
+		return nil
+	}
+	refs[name] = ref
+	if ref.Type() == plumbing.HashReference {
+		return walk(s, ref.Hash())
+	}
+	target, err := s.Reference(ref.Target())
+	if err != nil {
+		return fmt.Errorf("walkRef %s: %v", name, err)
+	}
+	return walkRef(s, target)
+}
+
+func walk(s storer.EncodedObjectStorer, h plumbing.Hash) error {
+	for _, seen := range []map[plumbing.Hash]bool{tags, commits, trees, blobs} {
+		if seen[h] {
+			return nil
+		}
+	}
+	obj, err := s.EncodedObject(plumbing.AnyObject, h)
+	if err != nil {
+		return fmt.Errorf("walk %s: %v", err)
+	}
+	switch obj.Type() {
+	case plumbing.TagObject:
+		return walkTag(s, h)
+	case plumbing.CommitObject:
+		return walkCommit(s, h)
+	case plumbing.TreeObject:
+		return walkTree(s, h)
+	case plumbing.BlobObject:
+		blobs[h] = true
+	}
+	return nil
+}
+
+func walkTag(s storer.EncodedObjectStorer, h plumbing.Hash) error {
+	return nil
+}
+
+func walkCommit(s storer.EncodedObjectStorer, h plumbing.Hash) error {
+	commits[h] = true
+	commit, err := object.GetCommit(s, h)
+	if err != nil {
+		return err
+	}
+	edges[h] = append(commit.ParentHashes[:], commit.TreeHash)
+	if err := walkTree(s, commit.TreeHash); err != nil {
+		return err
+	}
+	for _, p := range commit.ParentHashes {
+		if err := walkCommit(s, p); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func walkTree(s storer.EncodedObjectStorer, h plumbing.Hash) error {
@@ -129,6 +197,18 @@ func render(opts *options) {
 			attrs["color"] = "gold"
 		}
 		fmt.Printf("\t\"%s\" %s;\n", h, renderAttrs(attrs))
+	}
+	for name, ref := range refs {
+		target := string(ref.Target())
+		if ref.Type() == plumbing.HashReference {
+			target = ref.Hash().String()
+		}
+		attrs := map[string]string{"shape": "box"}
+		if !opts.noColor {
+			attrs["color"] = "plum"
+		}
+		fmt.Printf("\t\"%s\" %s;\n", name, renderAttrs(attrs))
+		fmt.Printf("\t\"%s\" -> \"%s\";\n", name, target)
 	}
 	for h, targets := range edges {
 		for _, target := range targets {
