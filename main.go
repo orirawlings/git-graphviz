@@ -125,10 +125,22 @@ func walk(s storer.EncodedObjectStorer, h plumbing.Hash) error {
 }
 
 func walkTag(s storer.EncodedObjectStorer, h plumbing.Hash) error {
-	return nil
+	if tags[h] {
+		return nil
+	}
+	tags[h] = true
+	tag, err := object.GetTag(s, h)
+	if err != nil {
+		return err
+	}
+	edges[h] = []plumbing.Hash{tag.Target}
+	return walk(s, tag.Target)
 }
 
 func walkCommit(s storer.EncodedObjectStorer, h plumbing.Hash) error {
+	if commits[h] {
+		return nil
+	}
 	commits[h] = true
 	commit, err := object.GetCommit(s, h)
 	if err != nil {
@@ -178,6 +190,15 @@ func render(opts *options) {
 		nodeAttrs["style"] = "filled"
 	}
 	fmt.Printf("\tnode %s;\n", renderAttrs(nodeAttrs))
+	for h := range tags {
+		attrs := map[string]string{
+			"label": label(h, "tag", opts.noTypes),
+		}
+		if !opts.noColor {
+			attrs["color"] = "lightskyblue"
+		}
+		fmt.Printf("\t\"%s\" %s;\n", h, renderAttrs(attrs))
+	}
 	for h := range commits {
 		attrs := map[string]string{
 			"group": "commits",
