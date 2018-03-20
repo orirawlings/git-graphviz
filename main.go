@@ -53,6 +53,11 @@ func main() {
 			check(walkRef(r.Storer, ref))
 		}
 	} else {
+		objs, err := r.Storer.IterEncodedObjects(plumbing.AnyObject)
+		check(err)
+		check(objs.ForEach(func(obj plumbing.EncodedObject) error {
+			return walkObj(r.Storer, obj)
+		}))
 		refs, err := r.References()
 		check(err)
 		check(refs.ForEach(func(ref *plumbing.Reference) error {
@@ -109,8 +114,13 @@ func walk(s storer.EncodedObjectStorer, h plumbing.Hash) error {
 	}
 	obj, err := s.EncodedObject(plumbing.AnyObject, h)
 	if err != nil {
-		return fmt.Errorf("walk %s: %v", err)
+		return fmt.Errorf("walk %s: %v", h, err)
 	}
+	return walkObj(s, obj)
+}
+
+func walkObj(s storer.EncodedObjectStorer, obj plumbing.EncodedObject) error {
+	h := obj.Hash()
 	switch obj.Type() {
 	case plumbing.TagObject:
 		return walkTag(s, h)
