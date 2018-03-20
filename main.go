@@ -188,6 +188,12 @@ func walkTree(s storer.EncodedObjectStorer, h plumbing.Hash) error {
 			edges[h] = append(edges[h], entry.Hash)
 			blobs[entry.Hash] = true
 		}
+		if entry.Mode == filemode.Submodule {
+			edges[h] = append(edges[h], entry.Hash)
+			if err := walkCommit(s, entry.Hash); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
