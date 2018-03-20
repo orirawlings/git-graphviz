@@ -25,14 +25,16 @@ var (
 )
 
 type options struct {
-	noColor bool
-	noTypes bool
+	noColor  bool
+	noTypes  bool
+	dangling bool
 }
 
 func main() {
 	opts := &options{}
 	flag.BoolVar(&opts.noColor, "no-color", false, "suppress filling graph nodes with color")
 	flag.BoolVar(&opts.noTypes, "no-types", false, "suppress labeling graph nodes with git object types")
+	flag.BoolVar(&opts.dangling, "dangling", false, "include dangling objects in the graph")
 	flag.Parse()
 
 	r, err := repo()
@@ -53,11 +55,13 @@ func main() {
 			check(walkRef(r.Storer, ref))
 		}
 	} else {
-		objs, err := r.Storer.IterEncodedObjects(plumbing.AnyObject)
-		check(err)
-		check(objs.ForEach(func(obj plumbing.EncodedObject) error {
-			return walkObj(r.Storer, obj)
-		}))
+		if opts.dangling {
+			objs, err := r.Storer.IterEncodedObjects(plumbing.AnyObject)
+			check(err)
+			check(objs.ForEach(func(obj plumbing.EncodedObject) error {
+				return walkObj(r.Storer, obj)
+			}))
+		}
 		refs, err := r.References()
 		check(err)
 		check(refs.ForEach(func(ref *plumbing.Reference) error {
