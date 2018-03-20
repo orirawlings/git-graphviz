@@ -141,7 +141,7 @@ func walkTag(s storer.EncodedObjectStorer, h plumbing.Hash) error {
 	tags[h] = true
 	tag, err := object.GetTag(s, h)
 	if err != nil {
-		return err
+		return fmt.Errorf("walkTag %s: %v", h, err)
 	}
 	edges[h] = []plumbing.Hash{tag.Target}
 	return walk(s, tag.Target)
@@ -154,7 +154,7 @@ func walkCommit(s storer.EncodedObjectStorer, h plumbing.Hash) error {
 	commits[h] = true
 	commit, err := object.GetCommit(s, h)
 	if err != nil {
-		return err
+		return fmt.Errorf("walkCommit %s: %v", h, err)
 	}
 	edges[h] = append(commit.ParentHashes[:], commit.TreeHash)
 	if err := walkTree(s, commit.TreeHash); err != nil {
@@ -175,19 +175,18 @@ func walkTree(s storer.EncodedObjectStorer, h plumbing.Hash) error {
 	trees[h] = true
 	t, err := object.GetTree(s, h)
 	if err != nil {
-		return err
+		return fmt.Errorf("walkTree %s: %v", h, err)
 	}
 	for _, entry := range t.Entries {
 		if entry.Mode == filemode.Dir {
-			err = walkTree(s, entry.Hash)
-			if err != nil {
+			edges[h] = append(edges[h], entry.Hash)
+			if err := walkTree(s, entry.Hash); err != nil {
 				return err
 			}
-			edges[h] = append(edges[h], entry.Hash)
 		}
 		if entry.Mode.IsFile() {
-			blobs[entry.Hash] = true
 			edges[h] = append(edges[h], entry.Hash)
+			blobs[entry.Hash] = true
 		}
 	}
 	return nil
