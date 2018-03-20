@@ -101,7 +101,7 @@ func walkRef(s storer.Storer, ref *plumbing.Reference) error {
 	}
 	target, err := s.Reference(ref.Target())
 	if err != nil {
-		return fmt.Errorf("walkRef %s: %v", name, err)
+		return nil
 	}
 	return walkRef(s, target)
 }
@@ -243,15 +243,18 @@ func render(opts *options) {
 		fmt.Printf("\t\"%s\" %s;\n", h, renderAttrs(attrs))
 	}
 	for name, ref := range refs {
-		target := string(ref.Target())
-		if ref.Type() == plumbing.HashReference {
-			target = ref.Hash().String()
-		}
 		attrs := map[string]string{"shape": "box"}
 		if !opts.noColor {
 			attrs["color"] = "plum"
 		}
 		fmt.Printf("\t\"%s\" %s;\n", name, renderAttrs(attrs))
+		var target fmt.Stringer = ref.Hash()
+		if ref.Type() == plumbing.SymbolicReference {
+			target = ref.Target()
+			if _, ok := refs[target.String()]; !ok {
+				continue
+			}
+		}
 		fmt.Printf("\t\"%s\" -> \"%s\";\n", name, target)
 	}
 	for h, targets := range edges {
