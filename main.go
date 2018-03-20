@@ -27,6 +27,7 @@ var (
 type options struct {
 	noColor  bool
 	noTypes  bool
+	noRefs   bool
 	dangling bool
 }
 
@@ -34,6 +35,7 @@ func main() {
 	opts := &options{}
 	flag.BoolVar(&opts.noColor, "no-color", false, "suppress filling graph nodes with color")
 	flag.BoolVar(&opts.noTypes, "no-types", false, "suppress labeling graph nodes with git object types")
+	flag.BoolVar(&opts.noRefs, "no-refs", false, "suppress including references in the graph")
 	flag.BoolVar(&opts.dangling, "dangling", false, "include dangling objects in the graph")
 	flag.Parse()
 
@@ -246,20 +248,22 @@ func render(opts *options) {
 		}
 		fmt.Printf("\t\"%s\" %s;\n", h, renderAttrs(attrs))
 	}
-	for name, ref := range refs {
-		attrs := map[string]string{"shape": "box"}
-		if !opts.noColor {
-			attrs["color"] = "plum"
-		}
-		fmt.Printf("\t\"%s\" %s;\n", name, renderAttrs(attrs))
-		var target fmt.Stringer = ref.Hash()
-		if ref.Type() == plumbing.SymbolicReference {
-			target = ref.Target()
-			if _, ok := refs[target.String()]; !ok {
-				continue
+	if !opts.noRefs {
+		for name, ref := range refs {
+			attrs := map[string]string{"shape": "box"}
+			if !opts.noColor {
+				attrs["color"] = "plum"
 			}
+			fmt.Printf("\t\"%s\" %s;\n", name, renderAttrs(attrs))
+			var target fmt.Stringer = ref.Hash()
+			if ref.Type() == plumbing.SymbolicReference {
+				target = ref.Target()
+				if _, ok := refs[target.String()]; !ok {
+					continue
+				}
+			}
+			fmt.Printf("\t\"%s\" -> \"%s\";\n", name, target)
 		}
-		fmt.Printf("\t\"%s\" -> \"%s\";\n", name, target)
 	}
 	for h, targets := range edges {
 		for _, target := range targets {
